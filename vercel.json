@@ -8,7 +8,15 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/api/slack/events",
+      "dest": "/api/slack/events.js"
+    },
+    {
+      "src": "/api/mcp",
+      "dest": "/api/mcp/index.js"
+    },
+    {
+      "src": "/",
       "dest": "/api/mcp/index.js"
     }
   ]
