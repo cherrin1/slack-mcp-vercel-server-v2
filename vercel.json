@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/mcp/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/mcp",
+      "dest": "/api/mcp/index.js"
+    }
+  ],
+  "env": {
+    "SLACK_BOT_TOKEN": "@slack_bot_token"
+  },
+  "functions": {
+    "api/mcp/index.js": {
+      "maxDuration": 30
+    }
+  }
+}
