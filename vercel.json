@@ -4,8 +4,5 @@
     "api/mcp/index.js": {
       "maxDuration": 30
     }
-  },
-  "env": {
-    "SLACK_BOT_TOKEN": "@slack_bot_token"
   }
 }
