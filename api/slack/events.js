@@ -6,8 +6,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ challenge });
     }
 
-    // Handle other event types (e.g., message, app_mention, etc.)
-    return res.status(200).end();
+    return res.status(200).end(); // Handle other Slack events here
   }
 
   res.status(405).send('Method Not Allowed');
