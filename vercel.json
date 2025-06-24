@@ -1,11 +1,23 @@
 {
   "version": 2,
-  "functions": {
-    "api/slack/events.js": {
-      "maxDuration": 10
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
     },
-    "api/mcp/index.js": {
-      "maxDuration": 30
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
     }
-  }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
+    }
+  ]
 }
