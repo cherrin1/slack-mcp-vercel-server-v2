@@ -2,8 +2,9 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/mcp/index.js",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
     }
   ]
 }
+
