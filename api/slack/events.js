@@ -7,7 +7,7 @@ export default function handler(req, res) {
     const { type, challenge } = req.body;
 
     if (type === 'url_verification') {
-      return res.status(200).json({ challenge });
+      return res.status(200).send(challenge);
     }
 
     return res.status(200).end();
