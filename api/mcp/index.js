@@ -1,8 +1,6 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SlackClient } from '../../lib/slack-client.js';
 
-// Create proper MCP server for ChatGPT integration
+// This replaces your existing /api/mcp/index.js file
 export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -33,23 +31,22 @@ export default async function handler(req, res) {
   const path = req.url || '/';
 
   try {
-    // Handle different endpoints based on ChatGPT MCP requirements
+    // SERVER DISCOVERY - This is what ChatGPT calls first
     if (req.method === 'GET' && (path === '/' || path === '/api/mcp')) {
-      // Server info endpoint - this is what ChatGPT calls first
       return res.status(200).json({
         name: "Slack MCP Server",
-        description: "Search and retrieve information from Slack workspace",
+        description: "Search and retrieve information from Slack workspace for ChatGPT deep research",
         version: "1.0.0",
         tools: [
           {
             name: "search",
-            description: "Search for messages across Slack channels. Use keywords to find relevant conversations, mentions, or specific topics. Returns message excerpts with channel context.",
+            description: "Search for messages across Slack channels using keywords, user mentions (@username), or channel references (#channel). Returns relevant messages with context.",
             input_schema: {
               type: "object",
               properties: {
                 query: {
                   type: "string", 
-                  description: "Search query - use keywords, user mentions (@username), channel references (#channel), or phrases"
+                  description: "Search query - keywords, phrases, @mentions, or #channels"
                 }
               },
               required: ["query"]
@@ -62,10 +59,10 @@ export default async function handler(req, res) {
                   items: {
                     type: "object",
                     properties: {
-                      id: { type: "string", description: "Unique identifier for the message" },
-                      title: { type: "string", description: "Message context/title" },
+                      id: { type: "string", description: "Message ID" },
+                      title: { type: "string", description: "Message context" },
                       text: { type: "string", description: "Message content" },
-                      url: { type: "string", description: "Link to message in Slack" }
+                      url: { type: "string", description: "Slack message URL" }
                     },
                     required: ["id", "title", "text"]
                   }
@@ -76,13 +73,13 @@ export default async function handler(req, res) {
           },
           {
             name: "fetch",
-            description: "Retrieve detailed information about a specific message, channel, or user by ID",
+            description: "Get detailed information about a specific Slack message, channel, or user by ID",
             input_schema: {
               type: "object",
               properties: {
                 id: { 
                   type: "string", 
-                  description: "ID of the resource to fetch (message ID, channel ID, or user ID)" 
+                  description: "Resource ID (message, channel, or user ID)" 
                 }
               },
               required: ["id"]
@@ -92,11 +89,11 @@ export default async function handler(req, res) {
               properties: {
                 id: { type: "string", description: "Resource ID" },
                 title: { type: "string", description: "Resource title" },
-                text: { type: "string", description: "Full content" },
-                url: { type: "string", description: "Resource URL" },
+                text: { type: "string", description: "Complete content" },
+                url: { type: "string", description: "Slack URL" },
                 metadata: { 
                   type: "object", 
-                  description: "Additional context like timestamps, users, etc." 
+                  description: "Additional context" 
                 }
               },
               required: ["id", "title", "text"]
@@ -106,22 +103,22 @@ export default async function handler(req, res) {
       });
     }
 
-    // Handle tool calls - this is the format ChatGPT expects
+    // MCP TOOL CALLS - This is what ChatGPT uses for search/fetch
     if (req.method === 'POST') {
-      const { tool, arguments: args } = req.body;
-
-      if (tool === 'search') {
-        return await handleSearch(slackClient, args, res);
+      const body = req.body;
+      
+      // Handle MCP-style tool calls from ChatGPT
+      if (body.tool === 'search') {
+        return await handleMCPSearch(slackClient, body.arguments, res);
       }
 
-      if (tool === 'fetch') {
-        return await handleFetch(slackClient, args, res);
+      if (body.tool === 'fetch') {
+        return await handleMCPFetch(slackClient, body.arguments, res);
       }
 
-      // Legacy REST API support for direct testing
-      if (path === '/search/messages') {
-        const { query } = req.body;
-        return await handleSearch(slackClient, { query }, res);
+      // Handle legacy REST calls for testing
+      if (path === '/search/messages' && body.query) {
+        return await handleMCPSearch(slackClient, { query: body.query }, res);
       }
     }
 
@@ -136,7 +133,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function handleSearch(slackClient, args, res) {
+async function handleMCPSearch(slackClient, args, res) {
   const { query } = args;
   
   if (!query) {
@@ -164,7 +161,7 @@ async function handleSearch(slackClient, args, res) {
       
     } catch (searchError) {
       if (searchError.message.includes('not_allowed_token_type')) {
-        // Fallback to manual search across channels
+        // Use fallback search method
         return await fallbackSearch(slackClient, query, res);
       }
       throw searchError;
@@ -174,23 +171,26 @@ async function handleSearch(slackClient, args, res) {
     console.error('Search error:', error);
     return res.status(500).json({ 
       error: 'Search failed', 
-      message: error.message 
+      message: error.message,
+      results: [] // Return empty results instead of failing
     });
   }
 }
 
 async function fallbackSearch(slackClient, query, res) {
   try {
-    // Get accessible channels
+    console.log('Using fallback search for:', query);
+    
+    // Get channels we can access
     const channelsData = await slackClient.makeRequest('conversations.list', {
       types: 'public_channel,private_channel',
       limit: 50
     });
 
-    const searchTerms = query.toLowerCase().split(/\s+/);
+    const searchTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
     let allResults = [];
 
-    // Search through recent messages in each channel
+    // Search through recent messages in accessible channels
     for (const channel of channelsData.channels.slice(0, 15)) {
       if (!channel.is_member) continue;
       
@@ -208,14 +208,14 @@ async function fallbackSearch(slackClient, query, res) {
           .map(msg => ({
             id: `msg-${channel.id}-${msg.ts}`,
             title: `Message in #${channel.name}`,
-            text: msg.text || 'No text content',
+            text: (msg.text || 'No text content').substring(0, 300) + (msg.text?.length > 300 ? '...' : ''),
             url: `https://slack.com/app_redirect?channel=${channel.id}&message_ts=${msg.ts}`
           }));
 
         allResults.push(...matchingMessages);
 
-        // Respect rate limits
-        if (allResults.length > 50) break;
+        // Stop if we have enough results
+        if (allResults.length >= 20) break;
         
       } catch (channelError) {
         // Skip channels we can't access
@@ -223,7 +223,7 @@ async function fallbackSearch(slackClient, query, res) {
       }
     }
 
-    // Sort by relevance (simple keyword match count)
+    // Sort by relevance
     allResults.sort((a, b) => {
       const aMatches = searchTerms.filter(term => 
         a.text.toLowerCase().includes(term)
@@ -237,19 +237,19 @@ async function fallbackSearch(slackClient, query, res) {
     const results = allResults.slice(0, 20);
 
     return res.status(200).json({ 
-      results,
-      _meta: { 
-        search_method: 'fallback',
-        total_found: results.length 
-      }
+      results
     });
 
   } catch (error) {
-    throw new Error(`Fallback search failed: ${error.message}`);
+    console.error('Fallback search error:', error);
+    return res.status(200).json({ 
+      results: [],
+      error: `Search failed: ${error.message}`
+    });
   }
 }
 
-async function handleFetch(slackClient, args, res) {
+async function handleMCPFetch(slackClient, args, res) {
   const { id } = args;
   
   if (!id) {
@@ -259,7 +259,7 @@ async function handleFetch(slackClient, args, res) {
   }
 
   try {
-    // Parse different ID formats
+    // Handle different ID formats
     if (id.startsWith('msg-')) {
       // Message ID format: msg-{channel}-{timestamp}
       const parts = id.split('-');
@@ -267,38 +267,43 @@ async function handleFetch(slackClient, args, res) {
         const channelId = parts[1];
         const timestamp = parts.slice(2).join('-');
         
-        // Get channel info
-        const channelInfo = await slackClient.makeRequest('conversations.info', {
-          channel: channelId
-        });
-
-        // Get the specific message and some context
-        const history = await slackClient.makeRequest('conversations.history', {
-          channel: channelId,
-          latest: timestamp,
-          inclusive: true,
-          limit: 1
-        });
-
-        const message = history.messages[0];
-        if (message) {
-          return res.status(200).json({
-            id,
-            title: `Message in #${channelInfo.channel.name}`,
-            text: message.text || 'No text content',
-            url: `https://slack.com/app_redirect?channel=${channelId}&message_ts=${timestamp}`,
-            metadata: {
-              channel: channelInfo.channel.name,
-              user: message.user,
-              timestamp: message.ts,
-              date: new Date(parseFloat(message.ts) * 1000).toISOString(),
-              thread_ts: message.thread_ts,
-              reply_count: message.reply_count || 0
-            }
+        try {
+          // Get channel info
+          const channelInfo = await slackClient.makeRequest('conversations.info', {
+            channel: channelId
           });
+
+          // Get the specific message
+          const history = await slackClient.makeRequest('conversations.history', {
+            channel: channelId,
+            latest: timestamp,
+            inclusive: true,
+            limit: 1
+          });
+
+          const message = history.messages[0];
+          if (message) {
+            return res.status(200).json({
+              id,
+              title: `Message in #${channelInfo.channel.name}`,
+              text: message.text || 'No text content',
+              url: `https://slack.com/app_redirect?channel=${channelId}&message_ts=${timestamp}`,
+              metadata: {
+                channel: channelInfo.channel.name,
+                user: message.user,
+                timestamp: message.ts,
+                date: new Date(parseFloat(message.ts) * 1000).toISOString()
+              }
+            });
+          }
+        } catch (msgError) {
+          console.error('Message fetch error:', msgError);
         }
       }
-    } else if (id.startsWith('C') || id.startsWith('G')) {
+    }
+
+    // Handle direct channel/user IDs
+    if (id.startsWith('C') || id.startsWith('G')) {
       // Channel ID
       const channelInfo = await slackClient.makeRequest('conversations.info', {
         channel: id
@@ -312,11 +317,12 @@ async function handleFetch(slackClient, args, res) {
         metadata: {
           name: channelInfo.channel.name,
           is_private: channelInfo.channel.is_private,
-          member_count: channelInfo.channel.num_members,
-          created: new Date(channelInfo.channel.created * 1000).toISOString()
+          member_count: channelInfo.channel.num_members
         }
       });
-    } else if (id.startsWith('U')) {
+    }
+
+    if (id.startsWith('U')) {
       // User ID
       const userInfo = await slackClient.makeRequest('users.info', {
         user: id
@@ -325,14 +331,12 @@ async function handleFetch(slackClient, args, res) {
       return res.status(200).json({
         id,
         title: userInfo.user.real_name || userInfo.user.name,
-        text: userInfo.user.profile?.title || userInfo.user.profile?.status_text || 'Slack user',
+        text: userInfo.user.profile?.title || 'Slack user',
         url: `https://slack.com/app_redirect?team=${userInfo.user.team_id}&id=${id}`,
         metadata: {
           name: userInfo.user.name,
-          display_name: userInfo.user.profile?.display_name,
           email: userInfo.user.profile?.email,
-          timezone: userInfo.user.tz,
-          is_bot: userInfo.user.is_bot
+          timezone: userInfo.user.tz
         }
       });
     }
