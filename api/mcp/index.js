@@ -1,6 +1,6 @@
 import { SlackClient } from '../../lib/slack-client.js';
 
-// MCP Server following the official specification
+// General API server for ChatGPT connector
 export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,397 +11,305 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Handle MCP discovery
-  if (req.method === 'GET') {
-    return res.status(200).json({
-      name: "slack-mcp-server",
-      version: "0.1.0",
-      description: "Slack workspace integration via MCP",
-      author: "Your Name",
-      capabilities: {
-        tools: {},
-        resources: {}
-      },
-      serverInfo: {
-        name: "slack-mcp-server",
-        version: "0.1.0"
-      }
-    });
-  }
-
-  if (req.method === 'POST') {
-    try {
-      const { jsonrpc, method, params, id } = req.body;
-
-      // Validate JSON-RPC 2.0 format
-      if (jsonrpc !== "2.0") {
-        return res.status(400).json({
-          jsonrpc: "2.0",
-          error: {
-            code: -32600,
-            message: "Invalid Request"
-          },
-          id: id || null
-        });
-      }
-
-      switch (method) {
-        case 'initialize':
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            result: {
-              protocolVersion: "2024-11-05",
-              capabilities: {
-                tools: {},
-                resources: {}
-              },
-              serverInfo: {
-                name: "slack-mcp-server",
-                version: "0.1.0"
-              }
-            },
-            id
-          });
-
-        case 'tools/list':
-          return res.status(200).json({
-            jsonrpc: "2.0",
-            result: {
-              tools: [
-                {
-                  name: "slack_list_channels",
-                  description: "List all channels in the Slack workspace",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      types: {
-                        type: "string",
-                        description: "Channel types (public_channel, private_channel)",
-                        default: "public_channel,private_channel"
-                      },
-                      limit: {
-                        type: "number",
-                        description: "Maximum channels to return",
-                        default: 100
-                      }
-                    }
-                  }
-                },
-                {
-                  name: "slack_search_messages",
-                  description: "Search for messages in Slack",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      query: {
-                        type: "string",
-                        description: "Search query string"
-                      },
-                      count: {
-                        type: "number",
-                        description: "Number of results",
-                        default: 20
-                      }
-                    },
-                    required: ["query"]
-                  }
-                },
-                {
-                  name: "slack_channel_history",
-                  description: "Get message history from a channel",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      channel: {
-                        type: "string",
-                        description: "Channel ID or name (with #)"
-                      },
-                      limit: {
-                        type: "number",
-                        description: "Number of messages",
-                        default: 50
-                      }
-                    },
-                    required: ["channel"]
-                  }
-                },
-                {
-                  name: "slack_send_message",
-                  description: "Send a message to a Slack channel",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      channel: {
-                        type: "string",
-                        description: "Channel ID or name (with #)"
-                      },
-                      text: {
-                        type: "string",
-                        description: "Message text to send"
-                      }
-                    },
-                    required: ["channel", "text"]
-                  }
-                },
-                {
-                  name: "slack_get_users",
-                  description: "Get list of users in workspace",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      limit: {
-                        type: "number",
-                        description: "Maximum users to return",
-                        default: 100
-                      }
-                    }
-                  }
-                },
-                {
-                  name: "slack_get_user_info",
-                  description: "Get information about a specific user",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      user: {
-                        type: "string",
-                        description: "User ID or username"
-                      }
-                    },
-                    required: ["user"]
-                  }
-                }
-              ]
-            },
-            id
-          });
-
-        case 'tools/call':
-          return await handleToolCall(params, res, id);
-
-        default:
-          return res.status(400).json({
-            jsonrpc: "2.0",
-            error: {
-              code: -32601,
-              message: "Method not found"
-            },
-            id
-          });
-      }
-    } catch (error) {
-      console.error('MCP Request error:', error);
-      return res.status(500).json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32603,
-          message: "Internal error",
-          data: error.message
-        },
-        id: req.body?.id || null
-      });
-    }
-  }
-
-  return res.status(405).json({ error: 'Method not allowed' });
-}
-
-async function handleToolCall(params, res, id) {
-  const { name, arguments: args } = params;
-
   // Initialize Slack client
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token) {
-    return res.status(500).json({
-      jsonrpc: "2.0",
-      error: {
-        code: -32603,
-        message: "SLACK_BOT_TOKEN not configured"
-      },
-      id
+    return res.status(500).json({ 
+      error: 'SLACK_BOT_TOKEN not configured' 
     });
   }
 
   const slackClient = new SlackClient(token);
 
   try {
-    let result;
+    // Route based on URL path
+    const path = req.url || '/';
 
-    switch (name) {
-      case 'slack_list_channels':
-        const channelsData = await slackClient.makeRequest('conversations.list', {
-          types: args.types || 'public_channel,private_channel',
-          limit: args.limit || 100
-        });
+    if (req.method === 'GET') {
+      switch (path) {
+        case '/':
+        case '/api/mcp':
+          return res.status(200).json({
+            name: "Slack API Server",
+            description: "REST API for Slack workspace integration",
+            version: "1.0.0",
+            endpoints: {
+              "GET /channels": "List all channels",
+              "GET /users": "List all users", 
+              "GET /channels/{channel}/history": "Get channel history",
+              "GET /users/{user}": "Get user info",
+              "POST /search/messages": "Search messages",
+              "POST /channels/{channel}/message": "Send message"
+            },
+            examples: {
+              list_channels: "GET /channels",
+              search_messages: "POST /search/messages with {\"query\": \"meeting\"}",
+              send_message: "POST /channels/general/message with {\"text\": \"Hello!\"}"
+            }
+          });
 
-        const channels = channelsData.channels.map(channel => ({
-          id: channel.id,
-          name: channel.name,
-          is_private: channel.is_private,
-          is_member: channel.is_member,
-          topic: channel.topic?.value || 'No topic',
-          member_count: channel.num_members
-        }));
+        case '/channels':
+          return await listChannels(slackClient, req, res);
 
-        result = {
-          content: [{
-            type: "text",
-            text: `Found ${channels.length} channels:\n${JSON.stringify(channels, null, 2)}`
-          }]
-        };
-        break;
+        case '/users':
+          return await listUsers(slackClient, req, res);
 
-      case 'slack_search_messages':
-        if (!args.query) {
-          throw new Error('Query parameter is required');
-        }
-
-        const searchData = await slackClient.makeRequest('search.messages', {
-          query: args.query,
-          count: args.count || 20
-        });
-
-        const messages = searchData.messages.matches.map(match => ({
-          channel: match.channel.name,
-          user: match.username,
-          text: match.text,
-          timestamp: match.ts,
-          permalink: match.permalink
-        }));
-
-        result = {
-          content: [{
-            type: "text",
-            text: `Found ${messages.length} messages for "${args.query}":\n${JSON.stringify(messages, null, 2)}`
-          }]
-        };
-        break;
-
-      case 'slack_channel_history':
-        if (!args.channel) {
-          throw new Error('Channel parameter is required');
-        }
-
-        let channel = args.channel;
-        if (channel.startsWith('#')) {
-          const channelsData = await slackClient.makeRequest('conversations.list');
-          const foundChannel = channelsData.channels.find(c => c.name === channel.slice(1));
-          if (foundChannel) channel = foundChannel.id;
-        }
-
-        const historyData = await slackClient.makeRequest('conversations.history', {
-          channel: channel,
-          limit: args.limit || 50
-        });
-
-        const history = historyData.messages.map(msg => ({
-          user: msg.user,
-          text: msg.text,
-          timestamp: msg.ts,
-          date: new Date(parseFloat(msg.ts) * 1000).toISOString()
-        }));
-
-        result = {
-          content: [{
-            type: "text",
-            text: `History for ${args.channel} (${history.length} messages):\n${JSON.stringify(history, null, 2)}`
-          }]
-        };
-        break;
-
-      case 'slack_send_message':
-        if (!args.channel || !args.text) {
-          throw new Error('Channel and text parameters are required');
-        }
-
-        let sendChannel = args.channel;
-        if (sendChannel.startsWith('#')) {
-          const channelsData = await slackClient.makeRequest('conversations.list');
-          const foundChannel = channelsData.channels.find(c => c.name === sendChannel.slice(1));
-          if (foundChannel) sendChannel = foundChannel.id;
-        }
-
-        const sendData = await slackClient.postMessage(sendChannel, args.text);
-
-        result = {
-          content: [{
-            type: "text",
-            text: `Message sent to ${args.channel}. Timestamp: ${sendData.ts}`
-          }]
-        };
-        break;
-
-      case 'slack_get_users':
-        const usersData = await slackClient.makeRequest('users.list', {
-          limit: args.limit || 100
-        });
-
-        const users = usersData.members
-          .filter(user => !user.deleted)
-          .map(user => ({
-            id: user.id,
-            name: user.name,
-            real_name: user.real_name,
-            email: user.profile?.email,
-            is_bot: user.is_bot,
-            is_admin: user.is_admin
-          }));
-
-        result = {
-          content: [{
-            type: "text",
-            text: `Found ${users.length} users:\n${JSON.stringify(users, null, 2)}`
-          }]
-        };
-        break;
-
-      case 'slack_get_user_info':
-        if (!args.user) {
-          throw new Error('User parameter is required');
-        }
-
-        const userData = await slackClient.makeRequest('users.info', {
-          user: args.user
-        });
-
-        const userInfo = {
-          id: userData.user.id,
-          name: userData.user.name,
-          real_name: userData.user.real_name,
-          email: userData.user.profile?.email,
-          title: userData.user.profile?.title,
-          is_bot: userData.user.is_bot,
-          is_admin: userData.user.is_admin,
-          timezone: userData.user.tz
-        };
-
-        result = {
-          content: [{
-            type: "text",
-            text: `User info for ${args.user}:\n${JSON.stringify(userInfo, null, 2)}`
-          }]
-        };
-        break;
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+        default:
+          // Handle dynamic paths
+          if (path.startsWith('/channels/') && path.endsWith('/history')) {
+            const channel = path.split('/')[2];
+            return await getChannelHistory(slackClient, channel, req, res);
+          }
+          
+          if (path.startsWith('/users/') && path.split('/').length === 3) {
+            const user = path.split('/')[2];
+            return await getUserInfo(slackClient, user, req, res);
+          }
+          
+          return res.status(404).json({ error: 'Endpoint not found' });
+      }
     }
 
-    return res.status(200).json({
-      jsonrpc: "2.0",
-      result,
-      id
-    });
+    if (req.method === 'POST') {
+      switch (path) {
+        case '/search/messages':
+          return await searchMessages(slackClient, req, res);
+
+        default:
+          // Handle dynamic POST paths
+          if (path.startsWith('/channels/') && path.endsWith('/message')) {
+            const channel = path.split('/')[2];
+            return await sendMessage(slackClient, channel, req, res);
+          }
+          
+          return res.status(404).json({ error: 'Endpoint not found' });
+      }
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
 
   } catch (error) {
-    console.error('Tool call error:', error);
-    return res.status(500).json({
-      jsonrpc: "2.0",
-      error: {
-        code: -32603,
-        message: error.message
-      },
-      id
+    console.error('API Error:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
     });
   }
+}
+
+// API endpoint functions
+async function listChannels(slackClient, req, res) {
+  const { types = 'public_channel,private_channel', limit = 100 } = req.query;
+  
+  const data = await slackClient.makeRequest('conversations.list', {
+    types,
+    limit: parseInt(limit)
+  });
+
+  const channels = data.channels.map(channel => ({
+    id: channel.id,
+    name: channel.name,
+    is_private: channel.is_private,
+    is_member: channel.is_member,
+    topic: channel.topic?.value || 'No topic',
+    purpose: channel.purpose?.value || 'No purpose',
+    member_count: channel.num_members,
+    created: new Date(channel.created * 1000).toISOString()
+  }));
+
+  return res.status(200).json({
+    success: true,
+    count: channels.length,
+    channels
+  });
+}
+
+async function listUsers(slackClient, req, res) {
+  const { limit = 100 } = req.query;
+  
+  const data = await slackClient.makeRequest('users.list', {
+    limit: parseInt(limit)
+  });
+
+  const users = data.members
+    .filter(user => !user.deleted)
+    .map(user => ({
+      id: user.id,
+      name: user.name,
+      real_name: user.real_name,
+      display_name: user.profile?.display_name || user.real_name,
+      email: user.profile?.email,
+      title: user.profile?.title,
+      is_bot: user.is_bot,
+      is_admin: user.is_admin,
+      timezone: user.tz,
+      status: user.profile?.status_text || 'No status'
+    }));
+
+  return res.status(200).json({
+    success: true,
+    count: users.length,
+    users
+  });
+}
+
+async function getChannelHistory(slackClient, channelParam, req, res) {
+  const { limit = 50, oldest, latest } = req.query;
+  
+  let channel = channelParam;
+  
+  // Handle channel names with # prefix
+  if (channel.startsWith('#')) {
+    channel = channel.slice(1);
+  }
+  
+  // If not a channel ID, find by name
+  if (!channel.startsWith('C')) {
+    const channelsData = await slackClient.makeRequest('conversations.list', {
+      types: 'public_channel,private_channel'
+    });
+    const foundChannel = channelsData.channels.find(c => c.name === channel);
+    if (foundChannel) {
+      channel = foundChannel.id;
+    } else {
+      return res.status(404).json({ 
+        error: 'Channel not found',
+        channel: channelParam 
+      });
+    }
+  }
+
+  const data = await slackClient.makeRequest('conversations.history', {
+    channel,
+    limit: parseInt(limit),
+    oldest,
+    latest
+  });
+
+  const messages = data.messages.map(message => ({
+    user: message.user,
+    text: message.text,
+    timestamp: message.ts,
+    date: new Date(parseFloat(message.ts) * 1000).toISOString(),
+    type: message.type,
+    thread_ts: message.thread_ts,
+    reply_count: message.reply_count || 0
+  }));
+
+  return res.status(200).json({
+    success: true,
+    channel: channelParam,
+    count: messages.length,
+    messages
+  });
+}
+
+async function getUserInfo(slackClient, user, req, res) {
+  try {
+    const data = await slackClient.makeRequest('users.info', { user });
+
+    const userInfo = {
+      id: data.user.id,
+      name: data.user.name,
+      real_name: data.user.real_name,
+      display_name: data.user.profile?.display_name || data.user.real_name,
+      email: data.user.profile?.email,
+      phone: data.user.profile?.phone,
+      title: data.user.profile?.title,
+      is_bot: data.user.is_bot,
+      is_admin: data.user.is_admin,
+      is_owner: data.user.is_owner,
+      timezone: data.user.tz,
+      status: data.user.profile?.status_text || 'No status',
+      avatar: data.user.profile?.image_512
+    };
+
+    return res.status(200).json({
+      success: true,
+      user: userInfo
+    });
+  } catch (error) {
+    return res.status(404).json({ 
+      error: 'User not found',
+      user: user 
+    });
+  }
+}
+
+async function searchMessages(slackClient, req, res) {
+  const { query, count = 20, sort = 'timestamp' } = req.body;
+  
+  if (!query) {
+    return res.status(400).json({ 
+      error: 'Query parameter is required in request body' 
+    });
+  }
+
+  const data = await slackClient.makeRequest('search.messages', {
+    query,
+    count: parseInt(count),
+    sort
+  });
+
+  const messages = data.messages.matches.map(match => ({
+    channel: match.channel.name,
+    channel_id: match.channel.id,
+    user: match.username,
+    user_id: match.user,
+    text: match.text,
+    timestamp: match.ts,
+    date: new Date(parseFloat(match.ts) * 1000).toISOString(),
+    permalink: match.permalink,
+    score: match.score
+  }));
+
+  return res.status(200).json({
+    success: true,
+    query,
+    count: messages.length,
+    messages
+  });
+}
+
+async function sendMessage(slackClient, channelParam, req, res) {
+  const { text, thread_ts } = req.body;
+  
+  if (!text) {
+    return res.status(400).json({ 
+      error: 'Text parameter is required in request body' 
+    });
+  }
+
+  let channel = channelParam;
+  
+  // Handle channel names
+  if (channel.startsWith('#')) {
+    channel = channel.slice(1);
+  }
+  
+  // If not a channel ID, find by name
+  if (!channel.startsWith('C')) {
+    const channelsData = await slackClient.makeRequest('conversations.list', {
+      types: 'public_channel,private_channel'
+    });
+    const foundChannel = channelsData.channels.find(c => c.name === channel);
+    if (foundChannel) {
+      channel = foundChannel.id;
+    } else {
+      return res.status(404).json({ 
+        error: 'Channel not found',
+        channel: channelParam 
+      });
+    }
+  }
+
+  const data = await slackClient.postMessage(channel, text, { thread_ts });
+
+  return res.status(200).json({
+    success: true,
+    message: 'Message sent successfully',
+    channel: channelParam,
+    timestamp: data.ts,
+    message_text: text
+  });
 }
