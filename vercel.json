@@ -16,14 +16,6 @@
       "dest": "/api/mcp/index.js"
     },
     {
-      "src": "/search",
-      "dest": "/api/mcp/index.js"
-    },
-    {
-      "src": "/fetch",
-      "dest": "/api/mcp/index.js"
-    },
-    {
       "src": "/api/oauth/config",
       "dest": "/api/oauth/config.js"
     },
@@ -39,10 +31,5 @@
       "src": "/search/messages",
       "dest": "/api/mcp/index.js"
     }
-  ],
-  "functions": {
-    "api/mcp/index.js": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
