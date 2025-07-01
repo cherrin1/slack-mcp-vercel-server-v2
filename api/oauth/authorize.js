@@ -1,5 +1,5 @@
 // In authorize.js, change the import to:
-import { TokenManager } from '../../lib/token-manager-fallback.js';
+import { TokenManager } from '../../lib/token-manager.js';
 export default async function handler(req, res) {
   console.log('Authorize endpoint called with:', req.method, req.query);
   
