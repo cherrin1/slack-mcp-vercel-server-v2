@@ -9,11 +9,27 @@
   "routes": [
     {
       "src": "/api/mcp",
-      "dest": "/api/mcp.js"
+      "dest": "/api/mcp/index.js"
+    },
+    {
+      "src": "/api/oauth/config",
+      "dest": "/api/oauth/config.js"
+    },
+    {
+      "src": "/api/oauth/authorize",
+      "dest": "/api/oauth/authorize.js"
+    },
+    {
+      "src": "/api/oauth/token",
+      "dest": "/api/oauth/token.js"
     },
     {
       "src": "/api/test",
       "dest": "/api/test.js"
+    },
+    {
+      "src": "/",
+      "dest": "/api/index.js"
     }
   ]
 }
