@@ -1,6 +1,6 @@
 import { SlackClient } from '../../lib/slack-client.js';
+import { TokenManager } from '../../lib/token-manager.js';
 
-// This replaces your existing /api/mcp/index.js file
 export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,23 +11,38 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Get token - try Authorization header first, then env
-  let token = null;
+  const tokenManager = new TokenManager();
+  let slackToken = null;
+
+  // Get user-specific token from Authorization header
   const authHeader = req.headers.authorization;
   
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7);
-  } else {
-    token = process.env.SLACK_BOT_TOKEN;
+    const accessToken = authHeader.substring(7);
+    
+    // Verify and decode the access token
+    const tokenPayload = tokenManager.verifyAccessToken(accessToken);
+    
+    if (tokenPayload) {
+      // Get the user's stored Slack token
+      slackToken = await tokenManager.getUserToken(tokenPayload.userId);
+      console.log('Using token for user:', tokenPayload.userId);
+    }
   }
 
-  if (!token) {
-    return res.status(500).json({ 
-      error: 'SLACK_BOT_TOKEN not configured' 
+  // Fallback to environment variable if no user token
+  if (!slackToken) {
+    slackToken = process.env.SLACK_BOT_TOKEN;
+    console.log('Using fallback environment token');
+  }
+
+  if (!slackToken) {
+    return res.status(401).json({ 
+      error: 'No valid Slack token available. Please reconnect your Slack workspace.' 
     });
   }
 
-  const slackClient = new SlackClient(token);
+  const slackClient = new SlackClient(slackToken);
   const path = req.url || '/';
 
   try {
@@ -126,6 +141,15 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('MCP Server Error:', error);
+    
+    // Check if it's an authentication error
+    if (error.message.includes('invalid_auth') || error.message.includes('token_revoked')) {
+      return res.status(401).json({ 
+        error: 'Slack authentication failed. Please reconnect your workspace.',
+        message: error.message 
+      });
+    }
+    
     return res.status(500).json({ 
       error: 'Internal server error',
       message: error.message 
