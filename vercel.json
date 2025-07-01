@@ -24,7 +24,15 @@
       "dest": "/api/oauth/authorize.js"
     },
     {
+      "src": "/authorize",
+      "dest": "/api/oauth/authorize.js"
+    },
+    {
       "src": "/api/oauth/token",
+      "dest": "/api/oauth/token.js"
+    },
+    {
+      "src": "/token",
       "dest": "/api/oauth/token.js"
     },
     {
