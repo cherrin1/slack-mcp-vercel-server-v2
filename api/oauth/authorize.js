@@ -3,6 +3,16 @@ import { TokenManager } from '../../lib/token-manager.js';
 export default async function handler(req, res) {
   console.log('Authorize endpoint called with:', req.method, req.query);
   
+  // Add CORS headers for all requests
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   const tokenManager = new TokenManager();
 
   if (req.method === 'GET') {
@@ -66,6 +76,7 @@ export default async function handler(req, res) {
                 width: 100%;
             }
             button:hover { background: #45a049; }
+            button:disabled { background: #ccc; cursor: not-allowed; }
             .help-text {
                 font-size: 13px;
                 color: #666;
@@ -80,6 +91,11 @@ export default async function handler(req, res) {
                 border-radius: 6px;
                 margin-bottom: 20px;
             }
+            .loading {
+                display: none;
+                text-align: center;
+                padding: 20px;
+            }
         </style>
     </head>
     <body>
@@ -91,7 +107,7 @@ export default async function handler(req, res) {
                 <a href="https://api.slack.com/tutorials/tracks/getting-a-token" target="_blank">Learn how to get one here</a> or find it in your <a href="https://api.slack.com/apps" target="_blank">Slack app settings</a>.
             </div>
 
-            <form method="POST" action="/api/oauth/authorize">
+            <form id="authForm" method="POST" action="/authorize">
                 <input type="hidden" name="redirect_uri" value="${redirect_uri}">
                 <input type="hidden" name="state" value="${state || ''}">
                 <input type="hidden" name="client_id" value="${client_id || ''}">
@@ -120,59 +136,6 @@ export default async function handler(req, res) {
                     </div>
                 </div>
                 
-                <script>
-                async function testToken() {
-                    const token = document.getElementById('slack_token').value;
-                    const testDiv = document.getElementById('tokenTest');
-                    
-                    if (!token) {
-                        testDiv.style.display = 'block';
-                        testDiv.style.background = '#f8d7da';
-                        testDiv.style.color = '#721c24';
-                        testDiv.innerHTML = '❌ Please enter a token first';
-                        return;
-                    }
-                    
-                    if (!token.startsWith('xoxp-')) {
-                        testDiv.style.display = 'block';
-                        testDiv.style.background = '#f8d7da';
-                        testDiv.style.color = '#721c24';
-                        testDiv.innerHTML = '❌ User tokens should start with "xoxp-"';
-                        return;
-                    }
-                    
-                    testDiv.style.display = 'block';
-                    testDiv.style.background = '#cce5ff';
-                    testDiv.style.color = '#004085';
-                    testDiv.innerHTML = '⏳ Testing token...';
-                    
-                    try {
-                        const response = await fetch('https://slack.com/api/auth.test', {
-                            headers: {
-                                'Authorization': 'Bearer ' + token,
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                            }
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (data.ok) {
-                            testDiv.style.background = '#d4edda';
-                            testDiv.style.color = '#155724';
-                            testDiv.innerHTML = \`✅ Token works! Connected to <strong>\${data.team}</strong> as <strong>\${data.user}</strong>\`;
-                        } else {
-                            testDiv.style.background = '#f8d7da';
-                            testDiv.style.color = '#721c24';
-                            testDiv.innerHTML = \`❌ Token error: \${data.error}\`;
-                        }
-                    } catch (error) {
-                        testDiv.style.background = '#f8d7da';
-                        testDiv.style.color = '#721c24';
-                        testDiv.innerHTML = \`❌ Test failed: \${error.message}\`;
-                    }
-                }
-                </script>
-                
                 <div class="form-group">
                     <label for="workspace_name">Workspace Name (optional):</label>
                     <input 
@@ -186,9 +149,72 @@ export default async function handler(req, res) {
                     </div>
                 </div>
                 
-                <button type="submit">Authorize Access</button>
+                <button type="submit" id="submitBtn">Authorize Access</button>
+                
+                <div class="loading" id="loading">
+                    <p>⏳ Validating token and setting up connection...</p>
+                </div>
             </form>
         </div>
+        
+        <script>
+        async function testToken() {
+            const token = document.getElementById('slack_token').value;
+            const testDiv = document.getElementById('tokenTest');
+            
+            if (!token) {
+                testDiv.style.display = 'block';
+                testDiv.style.background = '#f8d7da';
+                testDiv.style.color = '#721c24';
+                testDiv.innerHTML = '❌ Please enter a token first';
+                return;
+            }
+            
+            if (!token.startsWith('xoxp-')) {
+                testDiv.style.display = 'block';
+                testDiv.style.background = '#f8d7da';
+                testDiv.style.color = '#721c24';
+                testDiv.innerHTML = '❌ User tokens should start with "xoxp-"';
+                return;
+            }
+            
+            testDiv.style.display = 'block';
+            testDiv.style.background = '#cce5ff';
+            testDiv.style.color = '#004085';
+            testDiv.innerHTML = '⏳ Testing token...';
+            
+            try {
+                const response = await fetch('https://slack.com/api/auth.test', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.ok) {
+                    testDiv.style.background = '#d4edda';
+                    testDiv.style.color = '#155724';
+                    testDiv.innerHTML = \`✅ Token works! Connected to <strong>\${data.team}</strong> as <strong>\${data.user}</strong>\`;
+                } else {
+                    testDiv.style.background = '#f8d7da';
+                    testDiv.style.color = '#721c24';
+                    testDiv.innerHTML = \`❌ Token error: \${data.error}\`;
+                }
+            } catch (error) {
+                testDiv.style.background = '#f8d7da';
+                testDiv.style.color = '#721c24';
+                testDiv.innerHTML = \`❌ Test failed: \${error.message}\`;
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('authForm').addEventListener('submit', function(e) {
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('loading').style.display = 'block';
+        });
+        </script>
     </body>
     </html>
     `;
@@ -199,7 +225,14 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { slack_token, workspace_name, redirect_uri, state, client_id } = req.body;
     
+    console.log('POST request received:', { 
+      has_token: !!slack_token, 
+      has_redirect: !!redirect_uri,
+      redirect_uri 
+    });
+    
     if (!slack_token || !redirect_uri) {
+      console.log('Missing required fields');
       return res.status(400).send(`
         <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
           <h2>❌ Missing Required Information</h2>
@@ -210,6 +243,8 @@ export default async function handler(req, res) {
     }
 
     try {
+      console.log('Validating Slack token...');
+      
       // Validate the Slack token by making a test API call
       const testResponse = await fetch('https://slack.com/api/auth.test', {
         headers: {
@@ -219,8 +254,10 @@ export default async function handler(req, res) {
       });
 
       const testData = await testResponse.json();
+      console.log('Slack API response:', { ok: testData.ok, error: testData.error });
       
       if (!testData.ok) {
+        console.log('Invalid Slack token:', testData.error);
         return res.status(400).send(`
           <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
             <h2>❌ Invalid Slack User Token</h2>
@@ -240,10 +277,11 @@ export default async function handler(req, res) {
       const sessionData = `${testData.team_id}_${testData.user_id}_${Date.now()}`;
       const userId = tokenManager.generateUserId(sessionData);
       
+      console.log('Storing token for user:', userId);
       const stored = await tokenManager.storeUserToken(userId, slack_token);
       
       if (!stored) {
-        throw new Error('Failed to store token');
+        throw new Error('Failed to store token in database');
       }
 
       // Generate authorization code that includes user ID
@@ -266,7 +304,14 @@ export default async function handler(req, res) {
       return res.status(500).send(`
         <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
           <h2>❌ Authorization Failed</h2>
-          <p>There was an error processing your request: ${error.message}</p>
+          <p>There was an error processing your request:</p>
+          <p><code>${error.message}</code></p>
+          <p><strong>Common issues:</strong></p>
+          <ul style="text-align: left; display: inline-block;">
+            <li>Database connection problem</li>
+            <li>Network connectivity issue</li>
+            <li>Invalid token format</li>
+          </ul>
           <button onclick="history.back()">Go Back</button>
         </body></html>
       `);
