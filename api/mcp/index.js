@@ -2,7 +2,7 @@ import { SlackClient } from '../../lib/slack-client.js';
 import { TokenManager } from '../../lib/token-manager.js';
 
 export default async function handler(req, res) {
-  // Add CORS headers
+  // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -11,213 +11,197 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  console.log(`${req.method} ${req.url}`);
+
+  // Initialize token manager
   const tokenManager = new TokenManager();
   let slackToken = null;
 
-  // Get user-specific token from Authorization header
+  // Try to get user token from Authorization header
   const authHeader = req.headers.authorization;
-  
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const accessToken = authHeader.substring(7);
-    
-    // Verify and decode the access token
     const tokenPayload = tokenManager.verifyAccessToken(accessToken);
     
     if (tokenPayload) {
-      // Get the user's stored Slack token
       slackToken = await tokenManager.getUserToken(tokenPayload.userId);
-      console.log('Using token for user:', tokenPayload.userId);
+      console.log('Using user-specific token');
     }
   }
 
-  // Fallback to environment variable if no user token
+  // Fallback to environment token
   if (!slackToken) {
     slackToken = process.env.SLACK_USER_TOKEN;
-    console.log('Using fallback environment user token');
+    console.log('Using environment token');
   }
 
   if (!slackToken) {
     return res.status(401).json({ 
-      error: 'No valid Slack token available. Please reconnect your Slack workspace.' 
+      error: 'No Slack token available',
+      message: 'Please configure SLACK_USER_TOKEN or connect via OAuth'
     });
   }
 
   const slackClient = new SlackClient(slackToken);
-  const path = req.url || '/';
 
   try {
-    // SERVER DISCOVERY - This is what ChatGPT calls first
-    if (req.method === 'GET' && (path === '/' || path === '/api/mcp')) {
+    // Handle MCP server discovery
+    if (req.method === 'GET' && (req.url === '/' || req.url === '/api/mcp')) {
       return res.status(200).json({
         name: "Slack MCP Server",
-        description: "Search and retrieve information from Slack workspace for ChatGPT deep research",
+        description: "Search and retrieve Slack messages and data",
         version: "1.0.0",
+        protocol_version: "1.0.0",
+        capabilities: {
+          tools: true
+        },
         tools: [
           {
-            name: "search",
-            description: "Search for messages across Slack channels using keywords, user mentions (@username), or channel references (#channel). Returns relevant messages with context.",
+            name: "search_messages",
+            description: "Search for messages in Slack channels. Use keywords, @mentions, or #channel references.",
             input_schema: {
               type: "object",
               properties: {
                 query: {
-                  type: "string", 
-                  description: "Search query - keywords, phrases, @mentions, or #channels"
+                  type: "string",
+                  description: "Search query (keywords, @user, #channel)"
+                },
+                limit: {
+                  type: "number",
+                  description: "Maximum number of results (default: 10)",
+                  default: 10
                 }
               },
               required: ["query"]
-            },
-            output_schema: {
-              type: "object",
-              properties: {
-                results: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      id: { type: "string", description: "Message ID" },
-                      title: { type: "string", description: "Message context" },
-                      text: { type: "string", description: "Message content" },
-                      url: { type: "string", description: "Slack message URL" }
-                    },
-                    required: ["id", "title", "text"]
-                  }
-                }
-              },
-              required: ["results"]
             }
           },
           {
-            name: "fetch",
-            description: "Get detailed information about a specific Slack message, channel, or user by ID",
+            name: "get_channel_history",
+            description: "Get recent messages from a specific channel",
             input_schema: {
               type: "object",
               properties: {
-                id: { 
-                  type: "string", 
-                  description: "Resource ID (message, channel, or user ID)" 
+                channel: {
+                  type: "string",
+                  description: "Channel name (with #) or ID"
+                },
+                limit: {
+                  type: "number",
+                  description: "Number of messages to retrieve (default: 20)",
+                  default: 20
                 }
               },
-              required: ["id"]
-            },
-            output_schema: {
+              required: ["channel"]
+            }
+          },
+          {
+            name: "list_channels",
+            description: "List available Slack channels",
+            input_schema: {
               type: "object",
               properties: {
-                id: { type: "string", description: "Resource ID" },
-                title: { type: "string", description: "Resource title" },
-                text: { type: "string", description: "Complete content" },
-                url: { type: "string", description: "Slack URL" },
-                metadata: { 
-                  type: "object", 
-                  description: "Additional context" 
+                types: {
+                  type: "string",
+                  description: "Channel types to include",
+                  default: "public_channel,private_channel"
                 }
-              },
-              required: ["id", "title", "text"]
+              }
             }
           }
         ]
       });
     }
 
-    // MCP TOOL CALLS - This is what ChatGPT uses for search/fetch
+    // Handle tool calls
     if (req.method === 'POST') {
-      const body = req.body;
-      
-      // Handle MCP-style tool calls from ChatGPT
-      if (body.tool === 'search') {
-        return await handleMCPSearch(slackClient, body.arguments, res);
-      }
+      const { tool, arguments: args } = req.body;
 
-      if (body.tool === 'fetch') {
-        return await handleMCPFetch(slackClient, body.arguments, res);
-      }
-
-      // Handle legacy REST calls for testing
-      if (path === '/search/messages' && body.query) {
-        return await handleMCPSearch(slackClient, { query: body.query }, res);
+      switch (tool) {
+        case 'search_messages':
+          return await handleSearchMessages(slackClient, args, res);
+        
+        case 'get_channel_history':
+          return await handleChannelHistory(slackClient, args, res);
+        
+        case 'list_channels':
+          return await handleListChannels(slackClient, args, res);
+        
+        default:
+          return res.status(400).json({
+            error: 'Unknown tool',
+            available_tools: ['search_messages', 'get_channel_history', 'list_channels']
+          });
       }
     }
 
-    return res.status(404).json({ error: 'Endpoint not found' });
+    return res.status(404).json({ error: 'Not found' });
 
   } catch (error) {
     console.error('MCP Server Error:', error);
-    
-    // Check if it's an authentication error
-    if (error.message.includes('invalid_auth') || error.message.includes('token_revoked')) {
-      return res.status(401).json({ 
-        error: 'Slack authentication failed. Please reconnect your workspace.',
-        message: error.message 
-      });
-    }
-    
-    return res.status(500).json({ 
+    return res.status(500).json({
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     });
   }
 }
 
-async function handleMCPSearch(slackClient, args, res) {
-  const { query } = args;
+async function handleSearchMessages(slackClient, args, res) {
+  const { query, limit = 10 } = args;
   
-  if (!query) {
-    return res.status(400).json({ 
-      error: 'Query parameter is required' 
-    });
-  }
-
   try {
-    // Try Slack's search.messages API first
+    // Try search API first
     try {
-      const searchData = await slackClient.makeRequest('search.messages', {
+      const searchResult = await slackClient.makeRequest('search.messages', {
         query,
-        count: 20
+        count: limit
       });
 
-      const results = searchData.messages.matches.map(match => ({
-        id: `msg-${match.channel.id}-${match.ts}`,
-        title: `Message in #${match.channel.name}`,
-        text: match.text || 'No text content',
-        url: match.permalink || `https://slack.com/app_redirect?channel=${match.channel.id}&message_ts=${match.ts}`
+      const messages = searchResult.messages.matches.map(match => ({
+        channel: match.channel.name,
+        user: match.username,
+        text: match.text,
+        timestamp: match.ts,
+        permalink: match.permalink
       }));
 
-      return res.status(200).json({ results });
-      
+      return res.status(200).json({
+        content: [{
+          type: "text",
+          text: `Found ${messages.length} messages:\n\n` + 
+                messages.map(msg => 
+                  `**#${msg.channel}** by ${msg.user}:\n${msg.text}\n`
+                ).join('\n')
+        }]
+      });
+
     } catch (searchError) {
-      if (searchError.message.includes('not_allowed_token_type')) {
-        // Use fallback search method
-        return await fallbackSearch(slackClient, query, res);
-      }
-      throw searchError;
+      // Fallback to manual search
+      console.log('Search API failed, using fallback');
+      return await fallbackSearch(slackClient, query, limit, res);
     }
 
   } catch (error) {
-    console.error('Search error:', error);
-    return res.status(500).json({ 
-      error: 'Search failed', 
-      message: error.message,
-      results: [] // Return empty results instead of failing
+    console.error('Search failed:', error);
+    return res.status(500).json({
+      error: 'Search failed',
+      message: error.message
     });
   }
 }
 
-async function fallbackSearch(slackClient, query, res) {
+async function fallbackSearch(slackClient, query, limit, res) {
   try {
-    console.log('Using fallback search for:', query);
-    
-    // Get channels we can access
-    const channelsData = await slackClient.makeRequest('conversations.list', {
+    const channels = await slackClient.makeRequest('conversations.list', {
       types: 'public_channel,private_channel',
-      limit: 50
+      limit: 20
     });
 
-    const searchTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 2);
-    let allResults = [];
+    const searchTerms = query.toLowerCase().split(' ');
+    let allMessages = [];
 
-    // Search through recent messages in accessible channels
-    for (const channel of channelsData.channels.slice(0, 15)) {
+    for (const channel of channels.channels) {
       if (!channel.is_member) continue;
-      
+
       try {
         const history = await slackClient.makeRequest('conversations.history', {
           channel: channel.id,
@@ -230,151 +214,126 @@ async function fallbackSearch(slackClient, query, res) {
             return searchTerms.some(term => text.includes(term));
           })
           .map(msg => ({
-            id: `msg-${channel.id}-${msg.ts}`,
-            title: `Message in #${channel.name}`,
-            text: (msg.text || 'No text content').substring(0, 300) + (msg.text?.length > 300 ? '...' : ''),
-            url: `https://slack.com/app_redirect?channel=${channel.id}&message_ts=${msg.ts}`
+            channel: channel.name,
+            text: msg.text || '',
+            timestamp: msg.ts,
+            user: msg.user || 'unknown'
           }));
 
-        allResults.push(...matchingMessages);
-
-        // Stop if we have enough results
-        if (allResults.length >= 20) break;
+        allMessages.push(...matchingMessages);
         
+        if (allMessages.length >= limit) break;
       } catch (channelError) {
-        // Skip channels we can't access
-        continue;
+        continue; // Skip inaccessible channels
       }
     }
 
-    // Sort by relevance
-    allResults.sort((a, b) => {
-      const aMatches = searchTerms.filter(term => 
-        a.text.toLowerCase().includes(term)
-      ).length;
-      const bMatches = searchTerms.filter(term => 
-        b.text.toLowerCase().includes(term)
-      ).length;
-      return bMatches - aMatches;
-    });
-
-    const results = allResults.slice(0, 20);
-
-    return res.status(200).json({ 
-      results
+    const results = allMessages.slice(0, limit);
+    
+    return res.status(200).json({
+      content: [{
+        type: "text",
+        text: `Found ${results.length} messages:\n\n` + 
+              results.map(msg => 
+                `**#${msg.channel}**:\n${msg.text}\n`
+              ).join('\n')
+      }]
     });
 
   } catch (error) {
-    console.error('Fallback search error:', error);
-    return res.status(200).json({ 
-      results: [],
-      error: `Search failed: ${error.message}`
+    return res.status(500).json({
+      error: 'Fallback search failed',
+      message: error.message
     });
   }
 }
 
-async function handleMCPFetch(slackClient, args, res) {
-  const { id } = args;
+async function handleChannelHistory(slackClient, args, res) {
+  const { channel, limit = 20 } = args;
   
-  if (!id) {
-    return res.status(400).json({ 
-      error: 'ID parameter is required' 
-    });
-  }
-
   try {
-    // Handle different ID formats
-    if (id.startsWith('msg-')) {
-      // Message ID format: msg-{channel}-{timestamp}
-      const parts = id.split('-');
-      if (parts.length >= 3) {
-        const channelId = parts[1];
-        const timestamp = parts.slice(2).join('-');
-        
-        try {
-          // Get channel info
-          const channelInfo = await slackClient.makeRequest('conversations.info', {
-            channel: channelId
-          });
-
-          // Get the specific message
-          const history = await slackClient.makeRequest('conversations.history', {
-            channel: channelId,
-            latest: timestamp,
-            inclusive: true,
-            limit: 1
-          });
-
-          const message = history.messages[0];
-          if (message) {
-            return res.status(200).json({
-              id,
-              title: `Message in #${channelInfo.channel.name}`,
-              text: message.text || 'No text content',
-              url: `https://slack.com/app_redirect?channel=${channelId}&message_ts=${timestamp}`,
-              metadata: {
-                channel: channelInfo.channel.name,
-                user: message.user,
-                timestamp: message.ts,
-                date: new Date(parseFloat(message.ts) * 1000).toISOString()
-              }
-            });
-          }
-        } catch (msgError) {
-          console.error('Message fetch error:', msgError);
-        }
+    let channelId = channel;
+    
+    // If channel starts with #, remove it and find by name
+    if (channel.startsWith('#')) {
+      const channelName = channel.substring(1);
+      const channels = await slackClient.makeRequest('conversations.list', {
+        types: 'public_channel,private_channel'
+      });
+      
+      const foundChannel = channels.channels.find(c => c.name === channelName);
+      if (!foundChannel) {
+        return res.status(404).json({ error: 'Channel not found' });
       }
+      channelId = foundChannel.id;
     }
 
-    // Handle direct channel/user IDs
-    if (id.startsWith('C') || id.startsWith('G')) {
-      // Channel ID
-      const channelInfo = await slackClient.makeRequest('conversations.info', {
-        channel: id
-      });
+    const history = await slackClient.makeRequest('conversations.history', {
+      channel: channelId,
+      limit
+    });
 
-      return res.status(200).json({
-        id,
-        title: `#${channelInfo.channel.name}`,
-        text: channelInfo.channel.topic?.value || channelInfo.channel.purpose?.value || 'Slack channel',
-        url: `https://slack.com/app_redirect?channel=${id}`,
-        metadata: {
-          name: channelInfo.channel.name,
-          is_private: channelInfo.channel.is_private,
-          member_count: channelInfo.channel.num_members
-        }
-      });
-    }
+    const messages = history.messages.map(msg => ({
+      user: msg.user || 'unknown',
+      text: msg.text || '',
+      timestamp: msg.ts,
+      date: new Date(parseFloat(msg.ts) * 1000).toISOString()
+    }));
 
-    if (id.startsWith('U')) {
-      // User ID
-      const userInfo = await slackClient.makeRequest('users.info', {
-        user: id
-      });
-
-      return res.status(200).json({
-        id,
-        title: userInfo.user.real_name || userInfo.user.name,
-        text: userInfo.user.profile?.title || 'Slack user',
-        url: `https://slack.com/app_redirect?team=${userInfo.user.team_id}&id=${id}`,
-        metadata: {
-          name: userInfo.user.name,
-          email: userInfo.user.profile?.email,
-          timezone: userInfo.user.tz
-        }
-      });
-    }
-
-    return res.status(404).json({ 
-      error: 'Resource not found',
-      id 
+    return res.status(200).json({
+      content: [{
+        type: "text",
+        text: `Recent messages from ${channel}:\n\n` +
+              messages.map(msg => 
+                `**${msg.user}** (${msg.date}):\n${msg.text}\n`
+              ).join('\n')
+      }]
     });
 
   } catch (error) {
-    console.error('Fetch error:', error);
-    return res.status(500).json({ 
-      error: 'Fetch failed', 
-      message: error.message 
+    console.error('Channel history error:', error);
+    return res.status(500).json({
+      error: 'Failed to get channel history',
+      message: error.message
+    });
+  }
+}
+
+async function handleListChannels(slackClient, args, res) {
+  const { types = 'public_channel,private_channel' } = args;
+  
+  try {
+    const channelsData = await slackClient.makeRequest('conversations.list', {
+      types,
+      limit: 100
+    });
+
+    const channels = channelsData.channels
+      .filter(channel => channel.is_member)
+      .map(channel => ({
+        name: channel.name,
+        id: channel.id,
+        is_private: channel.is_private,
+        topic: channel.topic?.value || 'No topic',
+        member_count: channel.num_members
+      }));
+
+    return res.status(200).json({
+      content: [{
+        type: "text",
+        text: `Available channels (${channels.length}):\n\n` +
+              channels.map(ch => 
+                `**#${ch.name}** ${ch.is_private ? '(private)' : '(public)'}\n` +
+                `  ${ch.topic}\n  ${ch.member_count} members\n`
+              ).join('\n')
+      }]
+    });
+
+  } catch (error) {
+    console.error('List channels error:', error);
+    return res.status(500).json({
+      error: 'Failed to list channels',
+      message: error.message
     });
   }
 }
