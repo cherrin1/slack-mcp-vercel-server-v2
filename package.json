@@ -2,11 +2,10 @@
   "name": "slack-mcp-vercel-server",
   "version": "0.1.0",
   "description": "Slack MCP integration for ChatGPT Source Connection",
-  "type": "module",
   "main": "api/mcp/index.js",
   "scripts": {
     "dev": "vercel dev",
-    "build": "echo 'No build step needed'",
+    "build": "echo 'Build complete - serverless functions with static assets'",
     "deploy": "vercel --prod"
   },
   "dependencies": {
