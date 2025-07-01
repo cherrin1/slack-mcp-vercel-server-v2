@@ -109,13 +109,69 @@ export default async function handler(req, res) {
                         Your user token should start with "xoxp-" and have permissions like 
                         <code>search:read</code>, <code>channels:read</code>, <code>groups:read</code>, <code>users:read</code>, etc.
                         <br><br>
-                        <strong>How to get your token:</strong><br>
+                        <strong>Quick Setup:</strong><br>
                         1. Go to <a href="https://api.slack.com/apps" target="_blank">api.slack.com/apps</a><br>
-                        2. Select your app (or create one)<br>
-                        3. Go to "OAuth & Permissions"<br>
-                        4. Copy the "User OAuth Token" (starts with xoxp-)
+                        2. Create a new app "From scratch"<br>
+                        3. Go to "OAuth & Permissions" → "User Token Scopes"<br>
+                        4. Add: search:read, channels:read, groups:read, users:read, channels:history, groups:history<br>
+                        5. Install to workspace and copy the "User OAuth Token"<br><br>
+                        <button type="button" onclick="testToken()" style="background: #007cba; padding: 8px 16px; margin-top: 10px;">Test Token</button>
+                        <div id="tokenTest" style="margin-top: 10px; padding: 10px; border-radius: 4px; display: none;"></div>
                     </div>
                 </div>
+                
+                <script>
+                async function testToken() {
+                    const token = document.getElementById('slack_token').value;
+                    const testDiv = document.getElementById('tokenTest');
+                    
+                    if (!token) {
+                        testDiv.style.display = 'block';
+                        testDiv.style.background = '#f8d7da';
+                        testDiv.style.color = '#721c24';
+                        testDiv.innerHTML = '❌ Please enter a token first';
+                        return;
+                    }
+                    
+                    if (!token.startsWith('xoxp-')) {
+                        testDiv.style.display = 'block';
+                        testDiv.style.background = '#f8d7da';
+                        testDiv.style.color = '#721c24';
+                        testDiv.innerHTML = '❌ User tokens should start with "xoxp-"';
+                        return;
+                    }
+                    
+                    testDiv.style.display = 'block';
+                    testDiv.style.background = '#cce5ff';
+                    testDiv.style.color = '#004085';
+                    testDiv.innerHTML = '⏳ Testing token...';
+                    
+                    try {
+                        const response = await fetch('https://slack.com/api/auth.test', {
+                            headers: {
+                                'Authorization': 'Bearer ' + token,
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            }
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.ok) {
+                            testDiv.style.background = '#d4edda';
+                            testDiv.style.color = '#155724';
+                            testDiv.innerHTML = \`✅ Token works! Connected to <strong>\${data.team}</strong> as <strong>\${data.user}</strong>\`;
+                        } else {
+                            testDiv.style.background = '#f8d7da';
+                            testDiv.style.color = '#721c24';
+                            testDiv.innerHTML = \`❌ Token error: \${data.error}\`;
+                        }
+                    } catch (error) {
+                        testDiv.style.background = '#f8d7da';
+                        testDiv.style.color = '#721c24';
+                        testDiv.innerHTML = \`❌ Test failed: \${error.message}\`;
+                    }
+                }
+                </script>
                 
                 <div class="form-group">
                     <label for="workspace_name">Workspace Name (optional):</label>
