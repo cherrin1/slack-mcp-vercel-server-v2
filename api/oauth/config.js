@@ -10,8 +10,8 @@ export default function handler(req, res) {
   const baseUrl = `https://${req.headers.host}`;
   
   const config = {
-    authorization_endpoint: `${baseUrl}/api/oauth/authorize`,
-    token_endpoint: `${baseUrl}/api/oauth/token`,
+    authorization_endpoint: `${baseUrl}/authorize`,
+    token_endpoint: `${baseUrl}/token`,
     client_id: "slack-mcp-server",
     scopes: ["read", "write"],
     response_types_supported: ["code"],
