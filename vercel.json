@@ -1,0 +1,55 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/mcp",
+      "dest": "/api/mcp/index.js"
+    },
+    {
+      "src": "/api/oauth/config",
+      "dest": "/api/oauth/config.js"
+    },
+    {
+      "src": "/api/oauth/authorize",
+      "dest": "/api/oauth/authorize.js"
+    },
+    {
+      "src": "/authorize",
+      "dest": "/api/oauth/authorize.js"
+    },
+    {
+      "src": "/api/oauth/token",
+      "dest": "/api/oauth/token.js"
+    },
+    {
+      "src": "/token",
+      "dest": "/api/oauth/token.js"
+    },
+    {
+      "src": "/api/test",
+      "dest": "/api/test.js"
+    },
+    {
+      "src": "/search/messages",
+      "dest": "/api/mcp/index.js"
+    },
+    {
+      "src": "/",
+      "dest": "/public/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/mcp/index.js"
+    }
+  ]
+}
