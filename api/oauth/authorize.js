@@ -1,7 +1,10 @@
-// In authorize.js, change the import to:
 import { TokenManager } from '../../lib/token-manager.js';
+
 export default async function handler(req, res) {
-  console.log('Authorize endpoint called with:', req.method, req.query);
+  console.log('=== AUTHORIZE ENDPOINT DEBUG ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
   
   // Add CORS headers for all requests
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,19 +13,21 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   
   if (req.method === 'OPTIONS') {
+    console.log('OPTIONS request - returning CORS headers');
     return res.status(200).end();
   }
 
-  const tokenManager = new TokenManager();
-
   if (req.method === 'GET') {
+    console.log('GET request - showing authorization form');
     const { client_id, redirect_uri, scope, state } = req.query;
+    console.log('Query params:', { client_id, redirect_uri, scope, state });
     
     if (!redirect_uri) {
+      console.log('Missing redirect_uri');
       return res.status(400).json({ error: 'redirect_uri is required' });
     }
 
-    // Show authorization form
+    // Show authorization form (same HTML as before)
     const html = `
     <!DOCTYPE html>
     <html>
@@ -96,6 +101,14 @@ export default async function handler(req, res) {
                 text-align: center;
                 padding: 20px;
             }
+            .debug {
+                background: #f8f9fa;
+                padding: 10px;
+                border-radius: 4px;
+                font-family: monospace;
+                font-size: 12px;
+                margin-top: 20px;
+            }
         </style>
     </head>
     <body>
@@ -107,7 +120,7 @@ export default async function handler(req, res) {
                 <a href="https://api.slack.com/tutorials/tracks/getting-a-token" target="_blank">Learn how to get one here</a> or find it in your <a href="https://api.slack.com/apps" target="_blank">Slack app settings</a>.
             </div>
 
-            <form id="authForm" method="POST" action="/authorize">
+            <form id="authForm" method="POST" action="${req.url}">
                 <input type="hidden" name="redirect_uri" value="${redirect_uri}">
                 <input type="hidden" name="state" value="${state || ''}">
                 <input type="hidden" name="client_id" value="${client_id || ''}">
@@ -153,6 +166,14 @@ export default async function handler(req, res) {
                 
                 <div class="loading" id="loading">
                     <p>⏳ Validating token and setting up connection...</p>
+                </div>
+
+                <div class="debug">
+                    <strong>Debug Info:</strong><br>
+                    Redirect URI: ${redirect_uri}<br>
+                    Client ID: ${client_id}<br>
+                    State: ${state || 'none'}<br>
+                    Current URL: ${req.url}
                 </div>
             </form>
         </div>
@@ -209,10 +230,18 @@ export default async function handler(req, res) {
             }
         }
 
-        // Handle form submission
+        // Handle form submission with detailed logging
         document.getElementById('authForm').addEventListener('submit', function(e) {
+            console.log('Form submission started');
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('loading').style.display = 'block';
+            
+            // Add error handling
+            setTimeout(() => {
+                if (document.getElementById('loading').style.display === 'block') {
+                    console.log('Form submission seems to be taking too long...');
+                }
+            }, 5000);
         });
         </script>
     </body>
@@ -223,45 +252,59 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { slack_token, workspace_name, redirect_uri, state, client_id } = req.body;
+    console.log('POST request received');
+    console.log('Body:', req.body);
+    console.log('Content-Type:', req.headers['content-type']);
     
-    console.log('POST request received:', { 
-      has_token: !!slack_token, 
-      has_redirect: !!redirect_uri,
-      redirect_uri 
-    });
-    
-    if (!slack_token || !redirect_uri) {
-      console.log('Missing required fields');
-      return res.status(400).send(`
-        <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
-          <h2>❌ Missing Required Information</h2>
-          <p>Please provide both your Slack token and redirect URI.</p>
-          <button onclick="history.back()">Go Back</button>
-        </body></html>
-      `);
-    }
-
     try {
-      console.log('Validating Slack token...');
+      const tokenManager = new TokenManager();
+      console.log('TokenManager created successfully');
+      
+      const { slack_token, workspace_name, redirect_uri, state, client_id } = req.body;
+      
+      console.log('Extracted form data:', { 
+        has_token: !!slack_token, 
+        token_prefix: slack_token ? slack_token.substring(0, 10) + '...' : 'none',
+        workspace_name,
+        has_redirect: !!redirect_uri,
+        redirect_uri,
+        state,
+        client_id
+      });
+      
+      if (!slack_token || !redirect_uri) {
+        console.log('Missing required fields');
+        return res.status(400).send(\`
+          <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
+            <h2>❌ Missing Required Information</h2>
+            <p>Please provide both your Slack token and redirect URI.</p>
+            <p>Slack token: \${slack_token ? 'Provided' : 'Missing'}</p>
+            <p>Redirect URI: \${redirect_uri ? 'Provided' : 'Missing'}</p>
+            <button onclick="history.back()">Go Back</button>
+          </body></html>
+        \`);
+      }
+
+      console.log('Starting Slack token validation...');
       
       // Validate the Slack token by making a test API call
       const testResponse = await fetch('https://slack.com/api/auth.test', {
         headers: {
-          'Authorization': `Bearer ${slack_token}`,
+          'Authorization': \`Bearer \${slack_token}\`,
           'Content-Type': 'application/x-www-form-urlencoded',
         }
       });
 
+      console.log('Slack API response status:', testResponse.status);
       const testData = await testResponse.json();
-      console.log('Slack API response:', { ok: testData.ok, error: testData.error });
+      console.log('Slack API response data:', testData);
       
       if (!testData.ok) {
         console.log('Invalid Slack token:', testData.error);
-        return res.status(400).send(`
+        return res.status(400).send(\`
           <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
             <h2>❌ Invalid Slack User Token</h2>
-            <p>The token you provided is not valid: ${testData.error}</p>
+            <p>The token you provided is not valid: \${testData.error}</p>
             <p><strong>Make sure:</strong></p>
             <ul style="text-align: left; display: inline-block;">
               <li>Token starts with "xoxp-"</li>
@@ -270,53 +313,72 @@ export default async function handler(req, res) {
             </ul>
             <button onclick="history.back()">Go Back</button>
           </body></html>
-        `);
+        \`);
       }
 
+      console.log('Token validated successfully. Team:', testData.team, 'User:', testData.user);
+
       // Generate user ID and store token
-      const sessionData = `${testData.team_id}_${testData.user_id}_${Date.now()}`;
+      const sessionData = \`\${testData.team_id}_\${testData.user_id}_\${Date.now()}\`;
       const userId = tokenManager.generateUserId(sessionData);
       
-      console.log('Storing token for user:', userId);
+      console.log('Generated user ID:', userId);
+      console.log('Attempting to store token in KV...');
+      
       const stored = await tokenManager.storeUserToken(userId, slack_token);
+      console.log('Token storage result:', stored);
       
       if (!stored) {
+        console.log('Failed to store token');
         throw new Error('Failed to store token in database');
       }
 
+      console.log('Token stored successfully, generating access token...');
+      
       // Generate authorization code that includes user ID
       const authCode = tokenManager.generateAccessToken(userId);
+      console.log('Generated access token:', authCode.substring(0, 20) + '...');
       
-      // Redirect back to ChatGPT with the authorization code
+      // Redirect back to Claude with the authorization code
       const redirectUrl = new URL(redirect_uri);
       redirectUrl.searchParams.set('code', authCode);
       if (state) {
         redirectUrl.searchParams.set('state', state);
       }
       
-      console.log('Successfully stored token for user:', userId);
       console.log('Redirecting to:', redirectUrl.toString());
       
       return res.redirect(302, redirectUrl.toString());
 
     } catch (error) {
-      console.error('Error during authorization:', error);
-      return res.status(500).send(`
+      console.error('=== AUTHORIZATION ERROR ===');
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      console.error('Error details:', error);
+      
+      return res.status(500).send(\`
         <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
           <h2>❌ Authorization Failed</h2>
           <p>There was an error processing your request:</p>
-          <p><code>${error.message}</code></p>
+          <p><code>\${error.message}</code></p>
           <p><strong>Common issues:</strong></p>
           <ul style="text-align: left; display: inline-block;">
             <li>Database connection problem</li>
             <li>Network connectivity issue</li>
             <li>Invalid token format</li>
+            <li>Missing environment variables</li>
           </ul>
           <button onclick="history.back()">Go Back</button>
+          <br><br>
+          <details>
+            <summary>Technical Details</summary>
+            <pre style="text-align: left; background: #f5f5f5; padding: 10px;">\${error.stack}</pre>
+          </details>
         </body></html>
-      `);
+      \`);
     }
   }
 
+  console.log('Unsupported method:', req.method);
   return res.status(405).json({ error: 'Method not allowed' });
 }
