@@ -32,8 +32,8 @@ export default async function handler(req, res) {
 
   // Fallback to environment variable if no user token
   if (!slackToken) {
-    slackToken = process.env.SLACK_BOT_TOKEN;
-    console.log('Using fallback environment token');
+    slackToken = process.env.SLACK_USER_TOKEN;
+    console.log('Using fallback environment user token');
   }
 
   if (!slackToken) {
