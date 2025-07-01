@@ -45,7 +45,7 @@
     },
     {
       "src": "/",
-      "dest": "/public/index.html"
+      "dest": "/api/index.js"
     },
     {
       "src": "/public/(.*)",
