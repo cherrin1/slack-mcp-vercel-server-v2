@@ -87,8 +87,8 @@ export default async function handler(req, res) {
             <h1>🔗 Connect Your Slack Workspace</h1>
             
             <div class="warning">
-                <strong>⚠️ Important:</strong> You need a Slack Bot Token with appropriate permissions. 
-                <a href="https://api.slack.com/apps" target="_blank">Create one here</a> if you haven't already.
+                <strong>⚠️ Important:</strong> You need a Slack User Token with appropriate permissions. 
+                <a href="https://api.slack.com/tutorials/tracks/getting-a-token" target="_blank">Learn how to get one here</a> or find it in your <a href="https://api.slack.com/apps" target="_blank">Slack app settings</a>.
             </div>
 
             <form method="POST" action="/api/oauth/authorize">
@@ -97,17 +97,23 @@ export default async function handler(req, res) {
                 <input type="hidden" name="client_id" value="${client_id || ''}">
                 
                 <div class="form-group">
-                    <label for="slack_token">Slack Bot Token:</label>
+                    <label for="slack_token">Slack User Token:</label>
                     <input 
                         type="password" 
                         id="slack_token" 
                         name="slack_token" 
-                        placeholder="xoxb-your-bot-token-here"
+                        placeholder="xoxp-your-user-token-here"
                         required
                     >
                     <div class="help-text">
-                        Your bot token should start with "xoxb-" and have permissions like 
-                        <code>search:read</code>, <code>channels:read</code>, <code>groups:read</code>, etc.
+                        Your user token should start with "xoxp-" and have permissions like 
+                        <code>search:read</code>, <code>channels:read</code>, <code>groups:read</code>, <code>users:read</code>, etc.
+                        <br><br>
+                        <strong>How to get your token:</strong><br>
+                        1. Go to <a href="https://api.slack.com/apps" target="_blank">api.slack.com/apps</a><br>
+                        2. Select your app (or create one)<br>
+                        3. Go to "OAuth & Permissions"<br>
+                        4. Copy the "User OAuth Token" (starts with xoxp-)
                     </div>
                 </div>
                 
@@ -161,8 +167,14 @@ export default async function handler(req, res) {
       if (!testData.ok) {
         return res.status(400).send(`
           <html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
-            <h2>❌ Invalid Slack Token</h2>
+            <h2>❌ Invalid Slack User Token</h2>
             <p>The token you provided is not valid: ${testData.error}</p>
+            <p><strong>Make sure:</strong></p>
+            <ul style="text-align: left; display: inline-block;">
+              <li>Token starts with "xoxp-"</li>
+              <li>Token has required scopes (search:read, channels:read, etc.)</li>
+              <li>Token hasn't expired</li>
+            </ul>
             <button onclick="history.back()">Go Back</button>
           </body></html>
         `);
