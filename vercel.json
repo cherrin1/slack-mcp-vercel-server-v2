@@ -36,6 +36,10 @@
       "dest": "/api/oauth/token.js"
     },
     {
+      "src": "/api/test",
+      "dest": "/api/test.js"
+    },
+    {
       "src": "/search/messages",
       "dest": "/api/mcp/index.js"
     }
